@@ -20,7 +20,8 @@ from __future__ import print_function
 
 import math
 import os
-
+import requests
+import re
 
 import tensorflow as tf
 
@@ -48,12 +49,22 @@ from werkzeug.utils import secure_filename
 
 # --checkpoint_path=/opt/DeepLearning/checkpoint2000000/model.ckpt-2000000 --vocab_file=/opt/DeepLearning/word_counts.txt
 
-CHECKPOINT_PATH = "/opt/DeepLearning/checkpoint2000000/model.ckpt-2000000"
-VOCAB_FILE = "/opt/DeepLearning/word_counts.txt"
+CHECKPOINT_PATH = "/opt/checkpoint2000000/model.ckpt-2000000"
+VOCAB_FILE = "/opt/checkpoint2000000/word_counts.txt"
 
 app = Flask(__name__)
-app.config['UPLOAD_FOLDER'] = "/opt/DeepLearning/images"
+app.config['UPLOAD_FOLDER'] = "/opt/images"
 CORS(app)
+
+def translate(text):
+  token = requests.post('https://api.cognitive.microsoft.com/sts/v1.0/issueToken', headers={'Ocp-Apim-Subscription-Key': '35e034f427f74c44a1c39445ceea31c4'})
+  tradu = requests.get('https://api.microsofttranslator.com/v2/http.svc/Translate?appid=&text='+text+'&from=en-US&to=pt-BR', headers={'Authorization': 'Bearer '+token.text})
+  m = re.search('>(.*)<', tradu.text)
+  #return tradu.text
+  return m.group(1)
+
+print(translate("Hello world"))
+
 @app.route("/description", methods=["POST"])
 def upload_file():
   file = request.files['file']
@@ -102,9 +113,22 @@ def upload_file():
 	resJson = {"description": sentence, "logprob": math.exp(caption.logprob)}
         result[bname].append(resJson)
         print("  %d) %s (p=%f)" % (i, sentence, math.exp(caption.logprob)))
-    return json.dumps(result)
+    
+    #jsonResult = json.dumps(result[bname]);
+    textPt = translate(result[bname][0]['description'])
+    docBody = '<script type="text/javascript">'
+    docBody += 'var voz = new Audio("http://api.voicerss.org/?key=926a78262e6d44f2ae4cc278d7869813&hl=en-us&src='+result[bname][0]['description']+'");'
+    docBody += 'voz.play();'
+    docBody += 'voz.onended = function() {'
+    docBody +=   'var vozPt = new Audio("http://api.voicerss.org/?key=926a78262e6d44f2ae4cc278d7869813&hl=pt-br&src='+textPt+'");'
+    docBody +=   'vozPt.play();'
+    docBody += '};'
+    docBody += "</script>"
+    docBody += result[bname][0]['description']+"<br/>"
+    docBody += textPt+"<br/>"
+    return docBody;
 
 if __name__ == "__main__":
-    app.run()
+    app.run(host='0.0.0.0')
 #if __name__ == "__main__":
 #  tf.app.run()
