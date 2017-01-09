@@ -3,13 +3,35 @@
   <head>
     <base href="/">
     <meta charset="utf-8">
-    <title>Robotic Eyes</title>
+    <title>Deep Vision - Eye of Sauron</title>
     <meta name="description" content="">
     <meta name="viewport" content="width=device-width">
     <link rel="stylesheet" type="text/css" href="robotic-eyes/index.css" />
     <script type="application/javascript" src="robotic-eyes/jquery-3.1.1.min.js"></script>
+    <script type="application/javascript" src="robotic-eyes/artyom.min.js"></script>
     <script type="application/javascript">
+      function falar(text, lang) {
+        var voz = new Audio("http://api.voicerss.org/?key=926a78262e6d44f2ae4cc278d7869813&hl="+lang+"&src="+text);
+        voz.play();
+      }
+      function startArtyom() {
+        artyom.initialize({
+          lang: "pt",
+          continuous: true,
+          debug: true,
+          listen: true
+        });
+      }
       $(function() {
+        artyom.addCommands([{
+          description: "tirar foto",
+          indexes: ["tirar foto", "câmera", "veja"],
+          action: function(i) {
+            falar("Para tirar uma foto, clique em qualquer parte da tela.", "pt-BR");
+            $("#file")[0].click();
+          }
+        }]);
+        startArtyom();
         $("#file").change(function(ev) {
           $("#loading").show();
           $("#frameTmp").attr('src', "robotic-eyes/main.html");
@@ -28,7 +50,7 @@
       <header class="header">
         <p class="header-title">
           <a href="#">
-            Robotic Eyes
+            Deep Vision - Eye of Sauron
           </a>
         </p>
       </header>
@@ -37,7 +59,7 @@
         <form id="fileForm" target="frameTmp" method="post" action="http://13.92.251.105:5000/description"
               enctype="multipart/form-data">
           <input id="file" type="file" accept="image/*" capture="camera" name="file">
-          <label for="file">Tirar Foto</label>
+          <label id="fileLabel" for="file">Tirar Foto</label>
         </form>
       </div>
       <footer class="footer">

@@ -58,7 +58,7 @@ def main(_):
   tf.logging.info("Running caption generation on %d files matching %s",
                   len(filenames), FLAGS.input_files)
 
-  with tf.Session(graph=g) as sess:
+  with tf.Session(graph=g, config=tf.ConfigProto(device_count={"CPU": 4}, intra_op_parallelism_threads=4, inter_op_parallelism_threads=4 )) as sess:
     # Load the model from checkpoint.
     restore_fn(sess)
 

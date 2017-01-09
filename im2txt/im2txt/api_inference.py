@@ -37,6 +37,10 @@ from flask import Flask, request, redirect, url_for
 from flask_cors import CORS, cross_origin
 from werkzeug.utils import secure_filename
 
+import sys
+
+
+
 #FLAGS = tf.flags.FLAGS
 
 #tf.flags.DEFINE_string("checkpoint_path", "",
@@ -63,14 +67,15 @@ def translate(text):
   #return tradu.text
   return m.group(1)
 
-print(translate("Hello world"))
-
 @app.route("/description", methods=["POST"])
 def upload_file():
-  file = request.files['file']
-  filename = secure_filename(file.filename)
+  old_stdout = sys.stdout
+  sys.stdout = file('im2txt.log', 'w')
+
+  upFile = request.files['file']
+  filename = secure_filename(upFile.filename)
   filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-  file.save(filepath)
+  upFile.save(filepath)
   
   # Build the inference graph.
   g = tf.Graph()
@@ -89,7 +94,7 @@ def upload_file():
   tf.logging.info("Running caption generation on %d files matching %s",
                   len(filenames), filepath)
 
-  with tf.Session(graph=g) as sess:
+  with tf.Session(graph=g, config=tf.ConfigProto(intra_op_parallelism_threads=4)) as sess:
     # Load the model from checkpoint.
     restore_fn(sess)
 
@@ -113,7 +118,9 @@ def upload_file():
 	resJson = {"description": sentence, "logprob": math.exp(caption.logprob)}
         result[bname].append(resJson)
         print("  %d) %s (p=%f)" % (i, sentence, math.exp(caption.logprob)))
-    
+
+    sys.stdout.close()
+    sys.stdout = old_stdout
     #jsonResult = json.dumps(result[bname]);
     textPt = translate(result[bname][0]['description'])
     docBody = '<script type="text/javascript">'

@@ -38,7 +38,7 @@ class ModelConfig(object):
     # Minimum number of shards to keep in the input queue.
     self.input_queue_capacity_factor = 2
     # Number of threads for prefetching SequenceExample protos.
-    self.num_input_reader_threads = 1
+    self.num_input_reader_threads = 4
 
     # Name of the SequenceExample context feature containing image data.
     self.image_feature_name = "image/data"
