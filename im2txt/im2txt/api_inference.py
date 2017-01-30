@@ -60,6 +60,28 @@ app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = "/opt/images"
 CORS(app)
 
+
+# Build the inference graph.
+g = tf.Graph()
+with g.as_default():
+  model = inference_wrapper.InferenceWrapper()
+  restore_fn = model.build_graph_from_config(configuration.ModelConfig(),
+                                             CHECKPOINT_PATH)
+g.finalize()
+
+# Create the vocabulary.
+vocab = vocabulary.Vocabulary(VOCAB_FILE)
+
+sess = tf.Session(graph=g)
+
+# Load the model from checkpoint.
+restore_fn(sess)
+
+# Prepare the caption generator. Here we are implicitly using the default
+# beam search parameters. See caption_generator.py for a description of the
+# available beam search parameters.
+generator = caption_generator.CaptionGenerator(model, vocab)
+
 def translate(text, toLang):
   token = requests.post('https://api.cognitive.microsoft.com/sts/v1.0/issueToken', headers={'Ocp-Apim-Subscription-Key': '35e034f427f74c44a1c39445ceea31c4'})
   tradu = requests.get('https://api.microsofttranslator.com/v2/http.svc/Translate?appid=&text='+text+'&from=en-US&to='+toLang, headers={'Authorization': 'Bearer '+token.text})
@@ -120,50 +142,23 @@ def upload_file_json():
 
 def process_image(filepath):
   
-  # Build the inference graph.
-  g = tf.Graph()
-  with g.as_default():
-    model = inference_wrapper.InferenceWrapper()
-    restore_fn = model.build_graph_from_config(configuration.ModelConfig(),
-                                               CHECKPOINT_PATH)
-  g.finalize()
-
-  # Create the vocabulary.
-  vocab = vocabulary.Vocabulary(VOCAB_FILE)
-
-  filenames = [filepath]
-  #for file_pattern in FLAGS.input_files.split(","):
-  #  filenames.extend(tf.gfile.Glob(file_pattern))
-  tf.logging.info("Running caption generation on %d files matching %s",
-                  len(filenames), filepath)
-
-  with tf.Session(graph=g, config=tf.ConfigProto(intra_op_parallelism_threads=4)) as sess:
-    # Load the model from checkpoint.
-    restore_fn(sess)
-
-    # Prepare the caption generator. Here we are implicitly using the default
-    # beam search parameters. See caption_generator.py for a description of the
-    # available beam search parameters.
-    generator = caption_generator.CaptionGenerator(model, vocab)
+  result = []
+  with tf.gfile.GFile(filepath, "r") as f:
+    image = f.read()
     
-    result = {}
-    for filename in filenames:
-      with tf.gfile.GFile(filename, "r") as f:
-        image = f.read()
-      captions = generator.beam_search(sess, image)
-      bname = os.path.basename(filename)
-      print(time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime()))
-      print("Captions for image %s:" % bname)
-      result[bname] = []
-      for i, caption in enumerate(captions):
-        # Ignore begin and end words.
-        sentence = [vocab.id_to_word(w) for w in caption.sentence[1:-1]]
-        sentence = " ".join(sentence)
-	resJson = {"description": sentence, "logprob": math.exp(caption.logprob)}
-        result[bname].append(resJson)
-        print("  %d) %s (p=%f)" % (i, sentence, math.exp(caption.logprob)))
+  captions = generator.beam_search(sess, image)
+  print(time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime()))
+  print("Captions for image:")
+  
+  for i, caption in enumerate(captions):
+    # Ignore begin and end words.
+    sentence = [vocab.id_to_word(w) for w in caption.sentence[1:-1]]
+    sentence = " ".join(sentence)
+    resJson = {"description": sentence, "logprob": math.exp(caption.logprob)}
+    result.append(resJson)
+    print("  %d) %s (p=%f)" % (i, sentence, math.exp(caption.logprob)))
 
-    return result[bname]
+  return result
 
 
 if __name__ == "__main__":
