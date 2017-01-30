@@ -36,9 +36,9 @@ from flask import Flask, request, redirect, url_for
 #from flask_restful import Resource, Api
 from flask_cors import CORS, cross_origin
 from werkzeug.utils import secure_filename
+import time
 
 import sys
-
 
 
 #FLAGS = tf.flags.FLAGS
@@ -60,9 +60,9 @@ app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = "/opt/images"
 CORS(app)
 
-def translate(text):
+def translate(text, toLang):
   token = requests.post('https://api.cognitive.microsoft.com/sts/v1.0/issueToken', headers={'Ocp-Apim-Subscription-Key': '35e034f427f74c44a1c39445ceea31c4'})
-  tradu = requests.get('https://api.microsofttranslator.com/v2/http.svc/Translate?appid=&text='+text+'&from=en-US&to=pt-BR', headers={'Authorization': 'Bearer '+token.text})
+  tradu = requests.get('https://api.microsofttranslator.com/v2/http.svc/Translate?appid=&text='+text+'&from=en-US&to='+toLang, headers={'Authorization': 'Bearer '+token.text})
   m = re.search('>(.*)<', tradu.text)
   #return tradu.text
   return m.group(1)
@@ -71,11 +71,54 @@ def translate(text):
 def upload_file():
   old_stdout = sys.stdout
   sys.stdout = file('im2txt.log', 'w')
-
   upFile = request.files['file']
   filename = secure_filename(upFile.filename)
   filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
   upFile.save(filepath)
+  result = process_image(filepath)
+  sys.stdout.close()
+  sys.stdout = old_stdout
+  #jsonResult = json.dumps(result[bname]);
+  textPt = translate(result[0]['description'], "pt-BR")
+  docBody = '<script type="text/javascript">'
+  docBody += 'var voz = new Audio("http://api.voicerss.org/?key=926a78262e6d44f2ae4cc278d7869813&hl=en-us&src='+result[0]['description']+'");'
+  docBody += 'voz.play();'
+  docBody += 'voz.onended = function() {'
+  docBody +=   'var vozPt = new Audio("http://api.voicerss.org/?key=926a78262e6d44f2ae4cc278d7869813&hl=pt-br&src='+textPt+'");'
+  docBody +=   'vozPt.play();'
+  docBody += '};'
+  docBody += "</script>"
+  docBody += result[0]['description']+"<br/>"
+  docBody += textPt+"<br/>"
+  return docBody;
+
+@app.route("/description.json", methods=["POST"])
+def upload_file_json():
+  timeInit = time.time()
+  old_stdout = sys.stdout
+  upFile = request.files['file']
+  filename = str(time.time())+secure_filename(upFile.filename)
+  filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+  sys.stdout = file(filepath+'.log', 'w')
+  upFile.save(filepath)
+  result = process_image(filepath)
+  resp = result[0]
+  lang = request.args['lang']
+  text = resp['description']
+
+  if lang != 'en' and lang != 'en-us':
+    text = translate(text, lang)
+
+  resp['description'] = text
+  resp['audio'] = "http://api.voicerss.org/?key=926a78262e6d44f2ae4cc278d7869813&hl="+lang+"&src="+resp['description']
+  resp['time'] = time.time() - timeInit
+  jsonResult = json.dumps(resp)
+  print(jsonResult)
+  sys.stdout.close()
+  sys.stdout = old_stdout
+  return jsonResult;
+
+def process_image(filepath):
   
   # Build the inference graph.
   g = tf.Graph()
@@ -109,6 +152,7 @@ def upload_file():
         image = f.read()
       captions = generator.beam_search(sess, image)
       bname = os.path.basename(filename)
+      print(time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime()))
       print("Captions for image %s:" % bname)
       result[bname] = []
       for i, caption in enumerate(captions):
@@ -119,21 +163,8 @@ def upload_file():
         result[bname].append(resJson)
         print("  %d) %s (p=%f)" % (i, sentence, math.exp(caption.logprob)))
 
-    sys.stdout.close()
-    sys.stdout = old_stdout
-    #jsonResult = json.dumps(result[bname]);
-    textPt = translate(result[bname][0]['description'])
-    docBody = '<script type="text/javascript">'
-    docBody += 'var voz = new Audio("http://api.voicerss.org/?key=926a78262e6d44f2ae4cc278d7869813&hl=en-us&src='+result[bname][0]['description']+'");'
-    docBody += 'voz.play();'
-    docBody += 'voz.onended = function() {'
-    docBody +=   'var vozPt = new Audio("http://api.voicerss.org/?key=926a78262e6d44f2ae4cc278d7869813&hl=pt-br&src='+textPt+'");'
-    docBody +=   'vozPt.play();'
-    docBody += '};'
-    docBody += "</script>"
-    docBody += result[bname][0]['description']+"<br/>"
-    docBody += textPt+"<br/>"
-    return docBody;
+    return result[bname]
+
 
 if __name__ == "__main__":
     app.run(host='0.0.0.0')
