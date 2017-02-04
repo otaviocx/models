@@ -82,9 +82,16 @@ restore_fn(sess)
 # available beam search parameters.
 generator = caption_generator.CaptionGenerator(model, vocab)
 
+
+def loginMicrosoft():
+  apiKey = '35e034f427f74c44a1c39445ceea31c4'
+  url = 'https://api.cognitive.microsoft.com/sts/v1.0/issueToken'
+  return requests.post(url, headers={'Ocp-Apim-Subscription-Key': apiKey})
+
 def translate(text, toLang):
-  token = requests.post('https://api.cognitive.microsoft.com/sts/v1.0/issueToken', headers={'Ocp-Apim-Subscription-Key': '35e034f427f74c44a1c39445ceea31c4'})
-  tradu = requests.get('https://api.microsofttranslator.com/v2/http.svc/Translate?appid=&text='+text+'&from=en-US&to='+toLang, headers={'Authorization': 'Bearer '+token.text})
+  token = loginMicrosoft()
+  url = 'https://api.microsofttranslator.com/v2/http.svc/Translate?appid=&text='+text+'&from=en-US&to='+toLang
+  tradu = requests.get(url, headers={'Authorization': 'Bearer '+token.text})
   m = re.search('>(.*)<', tradu.text)
   #return tradu.text
   return m.group(1)
@@ -123,11 +130,12 @@ def upload_file_json():
   filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
   sys.stdout = file(filepath+'.log', 'w')
   upFile.save(filepath)
-  result = process_image(filepath)
-  resp = result[0]
+  result = process_image_microsoft(filepath)
+  resp = result
   lang = request.args['lang']
   text = resp['description']
-
+  
+  resp['original'] = text
   if lang != 'en' and lang != 'en-us':
     text = translate(text, lang)
 
@@ -140,6 +148,19 @@ def upload_file_json():
   sys.stdout = old_stdout
   return jsonResult;
 
+def process_image_microsoft(filepath):
+  apiKey = '759ee71195784c208431514aa84cb538'
+  url = "https://westus.api.cognitive.microsoft.com/vision/v1.0/describe?maxCandidates=3"
+  result = requests.post(
+    url, 
+    headers={'Ocp-Apim-Subscription-Key': apiKey, 'Content-type': 'application/octet-stream'},
+    data=open(filepath, 'rb')
+  )
+  print(result.text)
+  resJson = json.loads(result.text)
+  firstCaption = resJson["description"]["captions"][0]
+  return {"description": firstCaption["text"], "confidence": firstCaption["confidence"], "details": resJson["description"]}
+  
 def process_image(filepath):
   
   result = []
@@ -154,11 +175,11 @@ def process_image(filepath):
     # Ignore begin and end words.
     sentence = [vocab.id_to_word(w) for w in caption.sentence[1:-1]]
     sentence = " ".join(sentence)
-    resJson = {"description": sentence, "logprob": math.exp(caption.logprob)}
+    resJson = {"description": sentence, "confidence": math.exp(caption.logprob)}
     result.append(resJson)
     print("  %d) %s (p=%f)" % (i, sentence, math.exp(caption.logprob)))
 
-  return result
+  return result[0]
 
 
 if __name__ == "__main__":
